@@ -1,0 +1,3 @@
+devices:
+  your-devolo-device-1.local: "your-password-1"
+  your-devolo-device-2.local: "your-password-2"
