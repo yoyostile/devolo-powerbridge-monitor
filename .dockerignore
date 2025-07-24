@@ -1,0 +1,20 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+
+# GitHub Actions
+.github
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Config files (should be mounted at runtime)
+config.yml
+
+# Development files
+*.log
+*.tmp
