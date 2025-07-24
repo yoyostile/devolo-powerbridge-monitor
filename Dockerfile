@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y curl \
 
 COPY devolo_monitor.rb /app/
 COPY devolo_cli.rb /app/
+COPY logger.rb /app/
 
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app

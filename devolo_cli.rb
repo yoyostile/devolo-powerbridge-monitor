@@ -3,17 +3,19 @@
 require 'yaml'
 require 'optparse'
 require_relative 'devolo_monitor'
+require_relative 'logger'
 
 class DevoloCli
   def initialize
     @config = load_config
     @last_restart = {}
+    @logger = DevoloLogger.new(level: ENV['LOG_LEVEL'] || 'info', format: ENV['LOG_FORMAT'] || 'json')
   end
 
   def load_config
     YAML.load_file('config.yml')
   rescue => e
-    puts "Error loading config.yml: #{e.message}"
+    @logger.error("Failed to load config.yml", error: e.message)
     exit 1
   end
 
@@ -60,28 +62,24 @@ class DevoloCli
   end
 
   def check_all_devices
-    puts "🔍 Checking all devices..."
-    puts "=" * 50
+    @logger.info("Starting device status check", device_count: @config['devices'].length)
 
     @config['devices'].each do |host, password|
-      puts "\n📡 Device: #{host}"
-      puts "-" * 30
+      @logger.info("Checking device", host: host)
 
       monitor = DevoloMonitor.new(host, password)
       quality = monitor.check_connection_quality_only
 
       if quality
-        display_device_status(quality)
+        log_device_status(quality)
       else
-        puts "❌ Failed to get connection quality data"
+        @logger.error("Failed to get connection quality data", host: host)
       end
     end
   end
 
   def monitor_devices
-    puts "🔄 Starting continuous monitoring..."
-    puts "Press Ctrl+C to stop"
-    puts "=" * 50
+    @logger.info("Starting continuous monitoring", device_count: @config['devices'].length)
 
     # Initialize monitors before the loop
     monitors = {}
@@ -91,47 +89,48 @@ class DevoloCli
 
     loop do
       monitors.each do |host, monitor|
-        puts "\n🕐 #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
-        puts "📡 Monitoring: #{host}"
+        @logger.info("Monitoring device", host: host)
 
         # Check connection quality
         quality = monitor.check_connection_quality_only
 
         if quality
-          display_device_status(quality)
+          log_device_status(quality)
 
           if quality[:connection_issues].any?
             # Check cooldown before restarting
             if @last_restart[host] && Time.now - @last_restart[host] < 300
               remaining = 300 - (Time.now - @last_restart[host]).to_i
-              puts "    ⏳ Cooldown active. Wait #{remaining} seconds before next restart."
+              @logger.warn("Cooldown active, skipping restart", host: host, remaining_seconds: remaining)
             else
-              puts "    🔄 Issues detected - attempting restart..."
+              @logger.warn("Connection issues detected, attempting restart",
+                          host: host,
+                          issues: quality[:connection_issues])
+
               if monitor.restart_device
                 @last_restart[host] = Time.now
-                puts "    ✅ Restart initiated"
+                @logger.info("Restart initiated successfully", host: host)
               else
-                puts "    ❌ Restart failed"
+                @logger.error("Restart failed", host: host)
               end
             end
+          else
+            @logger.info("Connection status good", host: host)
           end
         else
-          puts "❌ Failed to get connection quality data"
+          @logger.error("Failed to get connection quality data", host: host)
         end
-
-        puts "-" * 30
       end
 
-      puts "\n⏳ Waiting 60 seconds before next check..."
+      @logger.debug("Waiting before next check cycle", wait_seconds: 60)
       sleep 60
     end
   rescue Interrupt
-    puts "\n🛑 Monitoring stopped by user"
+    @logger.info("Monitoring stopped by user")
   end
 
   def manual_restart
-    puts "🔄 Manual Restart"
-    puts "=" * 30
+    @logger.info("Starting manual restart process")
 
     # Show available devices
     @config['devices'].each_with_index do |(host, password), index|
@@ -142,7 +141,7 @@ class DevoloCli
     choice = STDIN.gets.chomp.to_i
 
     if choice < 1 || choice > @config['devices'].length
-      puts "❌ Invalid selection"
+      @logger.error("Invalid device selection", choice: choice, max_devices: @config['devices'].length)
       return
     end
 
@@ -153,7 +152,7 @@ class DevoloCli
     # Check cooldown
     if @last_restart[host] && Time.now - @last_restart[host] < 300
       remaining = 300 - (Time.now - @last_restart[host]).to_i
-      puts "⏳ Cooldown active. Wait #{remaining} seconds before next restart."
+      @logger.warn("Cooldown active, manual restart blocked", host: host, remaining_seconds: remaining)
       return
     end
 
@@ -164,40 +163,40 @@ class DevoloCli
       monitor = DevoloMonitor.new(host, password)
 
       if monitor.authenticate
-        # Just call restart_device directly, don't use monitor_and_restart_if_needed
         if monitor.restart_device
           @last_restart[host] = Time.now
-          puts "✅ Restart command sent successfully"
+          @logger.info("Manual restart command sent successfully", host: host)
         else
-          puts "❌ Restart failed"
+          @logger.error("Manual restart failed", host: host)
         end
       else
-        puts "❌ Authentication failed"
+        @logger.error("Authentication failed for manual restart", host: host)
       end
     else
-      puts "❌ Restart cancelled"
+      @logger.info("Manual restart cancelled by user", host: host)
     end
   end
 
   private
 
-  def display_device_status(quality)
-    puts "✅ Device: #{quality[:device_name]}"
-    puts "⏱️  Uptime: #{quality[:uptime]}"
-    puts "🆔 Current Device ID: #{quality[:current_device_id]}"
-    puts "👑 Domain Master ID: #{quality[:domain_master_id]}"
-    puts "📥 Domain Master RX: #{(quality[:master_rx_bps] * 32.0 / 1000.0).floor} Mbps"
-    puts "📤 Domain Master TX: #{(quality[:master_tx_bps] * 32.0 / 1000.0).floor} Mbps"
-    puts "🔗 MAC Addresses: #{quality[:mac_addresses].join(', ')}"
-    puts "❌ Master Lost: #{quality[:master_lost]}"
-    puts "🗺️  Lost MAPs: #{quality[:lost_maps]}"
+  def log_device_status(quality)
+    # Calculate Mbps values
+    rx_mbps = (quality[:master_rx_bps] * 32.0 / 1000.0).floor
+    tx_mbps = (quality[:master_tx_bps] * 32.0 / 1000.0).floor
 
-    if quality[:connection_issues].any?
-      puts "⚠️  Issues detected:"
-      quality[:connection_issues].each { |issue| puts "  - #{issue}" }
-    else
-      puts "✅ Connection looks good"
-    end
+    @logger.info("Device status",
+                device_name: quality[:device_name],
+                host: quality[:device_name], # for consistency
+                uptime: quality[:uptime],
+                current_device_id: quality[:current_device_id],
+                domain_master_id: quality[:domain_master_id],
+                rx_mbps: rx_mbps,
+                tx_mbps: tx_mbps,
+                mac_addresses: quality[:mac_addresses],
+                master_lost: quality[:master_lost],
+                lost_maps: quality[:lost_maps],
+                connection_issues: quality[:connection_issues],
+                has_issues: quality[:connection_issues].any?)
   end
 end
 

@@ -2,6 +2,7 @@ require 'net/http'
 require 'uri'
 require 'json'
 require 'digest'
+require_relative 'logger'
 
 class DevoloMonitor
   def initialize(host, password = nil)
@@ -10,6 +11,7 @@ class DevoloMonitor
     @csrf_token = nil
     @api_tokens = {}
     @session_cookie = nil
+    @logger = DevoloLogger.new(level: ENV['LOG_LEVEL'] || 'info', format: ENV['LOG_FORMAT'] || 'json')
   end
 
   def get_device_info
@@ -24,7 +26,7 @@ class DevoloMonitor
     if response.code == '200'
       parse_device_data(response.body)
     else
-      puts "Failed to get device info: #{response.code}"
+      @logger.error("Failed to get device info", host: @host, response_code: response.code)
       nil
     end
   end
@@ -66,7 +68,7 @@ class DevoloMonitor
         cookie_header = response['Set-Cookie']
         if cookie_header =~ /plcfw-http-session-id=([^;]+)/
           @session_cookie = "plcfw-http-session-id=#{$1}"
-          puts "Session cookie set: #{@session_cookie}"
+          @logger.debug("Session cookie set", host: @host, session_id: $1)
         end
       end
 
@@ -188,7 +190,7 @@ class DevoloMonitor
     # Always refresh CSRF token before restart
     refresh_csrf_token
 
-    puts "Attempting to restart device #{@host}..."
+    @logger.info("Attempting to restart device", host: @host)
 
     uri = URI("http://#{@host}/")
     http = Net::HTTP.new(uri.host, uri.port)
@@ -201,14 +203,14 @@ class DevoloMonitor
     response = http.request(request)
 
     if response.code == '200'
-      puts "✅ Restart command sent successfully"
+      @logger.info("Restart command sent successfully", host: @host)
       return true
     else
-      puts "❌ Restart failed with code: #{response.code}"
+      @logger.error("Restart failed", host: @host, response_code: response.code)
       return false
     end
   rescue => e
-    puts "❌ Restart error: #{e.message}"
+    @logger.error("Restart error", host: @host, error: e.message)
     false
   end
 
@@ -216,9 +218,9 @@ class DevoloMonitor
     info = get_device_info
     if info && info['CSRFTOKEN']
       @csrf_token = info['CSRFTOKEN']
-      puts "🔄 CSRF token refreshed: #{@csrf_token}"
+      @logger.debug("CSRF token refreshed", host: @host, token: @csrf_token)
     else
-      puts "⚠️  Failed to refresh CSRF token"
+      @logger.warn("Failed to refresh CSRF token", host: @host)
     end
   end
 
