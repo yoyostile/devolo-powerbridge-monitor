@@ -28,4 +28,6 @@ steps:
 
       dry_run: true
     when:
-      event: [pull_request, manual]
+      branch:
+        exclude: main
+      event: [pull_request, manual, push]
