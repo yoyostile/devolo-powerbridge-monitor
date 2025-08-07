@@ -3,7 +3,7 @@ steps:
     image: woodpeckerci/plugin-docker-buildx
     settings:
       registry: https://ghcr.io
-      repo: yoyostile/devolo-powerbridge-monitor
+      repo: ghcr.io/yoyostile/devolo-powerbridge-monitor
 
       username:
         from_secret: docker_username
@@ -20,9 +20,6 @@ steps:
   build-pr:
     image: woodpeckerci/plugin-docker-buildx
     settings:
-      registry: https://ghcr.io
-      repo: yoyostile/devolo-powerbridge-monitor
-
       dockerfile: Dockerfile
       platforms: linux/amd64
 
