@@ -14,7 +14,7 @@ steps:
       context: .
       platforms: linux/amd64
     when:
-      branch: main
+      branch: [main]
       event: [push, manual]
 
   build-pr:
@@ -28,5 +28,4 @@ steps:
 
       dry_run: true
     when:
-      event: [pull_request, manual]
-
+      branch: [main]
