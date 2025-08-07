@@ -15,7 +15,7 @@ steps:
       platforms: linux/amd64
     when:
       branch: main
-      event: push
+      event: [push, manual]
 
   build-pr:
     image: woodpeckerci/plugin-docker-buildx
@@ -28,5 +28,5 @@ steps:
 
       dry_run: true
     when:
-      event: pull_request
+      event: [pull_request, manual]
 
